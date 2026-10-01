@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distribuidora de Bebidas - Pedidos Online</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+    <header>
+        <h1>Distribuidora de Bebidas</h1>
+        <div class="cart-btn-container">
+            <button id="ver-carrito-btn" onclick="toggleCarrito()">🛒 Carrito (<span id="cart-count">0</span>)</button>
+        </div>
+    </header>
+
+    <div class="container main-content">
+        <!-- CATÁLOGO Y BÚSQUEDA -->
+        <main class="catalogo-section">
+            <div class="busqueda-bar">
+                <input type="text" id="buscar-input" placeholder="🔍 Buscar bebida..." oninput="filtrarBebidas()">
+            </div>
+
+            <div id="catalogo-grid" class="grid-bebidas">
+                <!-- Se carga con JS -->
+            </div>
+        </main>
+
+        <!-- CARRITO Y CHECKOUT -->
+        <aside id="carrito-panel" class="carrito-panel hidden">
+            <h2>Tu Pedido</h2>
+            <div id="carrito-items"></div>
+            <hr>
+            <div class="total-row">
+                <strong>Total:</strong> $<span id="total-precio">0</span>
+            </div>
+
+            <form id="form-pedido" onsubmit="enviarPedido(event)">
+                <h3>Datos del Pedido</h3>
+                
+                <label>Pedido a nombre de:</label>
+                <input type="text" id="cliente-nombre" required placeholder="Nombre y Apellido">
+
+                <label>Número de Teléfono:</label>
+                <input type="tel" id="cliente-telefono" required placeholder="Ej: 1122334455">
+
+                <label>Opción de Entrega:</label>
+                <select id="tipo-entrega" onchange="toggleDireccion()" required>
+                    <option value="retiro">Retiro en local</option>
+                    {% if delivery_disponible %}
+                        <option value="delivery">Delivery a domicilio</option>
+                    {% else %}
+                        <option value="delivery" disabled>Delivery (No disponible actualmente)</option>
+                    {% endif %}
+                </select>
+
+                <div id="casilla-direccion" class="hidden">
+                    <label>Dirección de Envío:</label>
+                    <input type="text" id="cliente-direccion" placeholder="Calle, Número, Piso/Depto">
+                </div>
+
+                <label>Método de Pago:</label>
+                <select id="metodo-pago" required>
+                    <option value="Mercado Pago">Mercado Pago (Billetera Virtual)</option>
+                    <option value="Efectivo">Efectivo</option>
+                </select>
+                <!-- MENSAJE ACLARATORIO DE PAGO -->
+                <p class="nota-pago">ℹ️ <em>Se abona en persona.</em></p>
+
+                <button type="submit" class="btn-confirmar">Confirmar y Enviar Pedido</button>
+            </form>
+        </aside>
+    </div>
+
+    <script>
+        let catalog = [];
+        let carrito = [];
+
+        async function cargarCatalogo() {
+            try {
+                const res = await fetch('/api/bebidas');
+                catalog = await res.json();
+                renderCatalogo(catalog);
+            } catch (err) {
+                console.error("Error al cargar bebidas:", err);
+            }
+        }
+
+        function renderCatalogo(lista) {
+            const grid = document.getElementById('catalogo-grid');
+            grid.innerHTML = '';
+            
+            if (lista.length === 0) {
+                grid.innerHTML = '<p>No se encontraron bebidas.</p>';
+                return;
+            }
+
+            lista.forEach(item => {
+                const card = document.createElement('div');
+                card.className = `card ${!item.disponible ? 'sin-stock-card' : ''}`;
+                
+                const imgSrc = item.imagen ? `/static/uploads/${item.imagen}` : 'https://via.placeholder.com/150?text=Bebida';
+                
+                card.innerHTML = `
+                    <div class="img-container">
+                        <img src="${imgSrc}" alt="${item.nombre}">
+                        ${!item.disponible ? '<span class="badge-sin-stock">SIN STOCK</span>' : ''}
+                    </div>
+                    <h3>${item.nombre}</h3>
+                    <p class="precio">$${item.precio}</p>
+                    <button 
+                        class="btn-agregar" 
+                        onclick="agregarAlCarrito(${item.id})" 
+                        ${!item.disponible ? 'disabled' : ''}>
+                        ${item.disponible ? 'Agregar al Carrito' : 'Sin Stock'}
+                    </button>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function filtrarBebidas() {
+            const query = document.getElementById('buscar-input').value.toLowerCase();
+            const filtrados = catalog.filter(b => b.nombre.toLowerCase().includes(query));
+            renderCatalogo(filtrados);
+        }
+
+        function agregarAlCarrito(id) {
+            const prod = catalog.find(b => b.id === id);
+            if (!prod || !prod.disponible) return;
+
+            const itemInCart = carrito.find(item => item.id === id);
+            if (itemInCart) {
+                itemInCart.cantidad++;
+            } else {
+                carrito.push({ ...prod, cantidad: 1 });
+            }
+            actualizarCarritoUI();
+        }
+
+        function actualizarCarritoUI() {
+            const container = document.getElementById('carrito-items');
+            container.innerHTML = '';
+            let total = 0;
+            let count = 0;
+
+            carrito.forEach(item => {
+                total += item.precio * item.cantidad;
+                count += item.cantidad;
+                const div = document.createElement('div');
+                div.className = 'cart-item';
+                div.innerHTML = `
+                    <p><strong>${item.nombre}</strong> (x${item.cantidad}) - $${item.precio * item.cantidad}</p>
+                `;
+                container.appendChild(div);
+            });
+
+            document.getElementById('total-precio').innerText = total;
+            document.getElementById('cart-count').innerText = count;
+        }
+
+        function toggleCarrito() {
+            document.getElementById('carrito-panel').classList.toggle('hidden');
+        }
+
+        function toggleDireccion() {
+            const tipo = document.getElementById('tipo-entrega').value;
+            const casilla = document.getElementById('casilla-direccion');
+            if (tipo === 'delivery') {
+                casilla.classList.remove('hidden');
+                document.getElementById('cliente-direccion').required = true;
+            } else {
+                casilla.classList.add('hidden');
+                document.getElementById('cliente-direccion').required = false;
+            }
+        }
+
+        let ultimoPedidoId = null;
+
+async function enviarPedido(e) {
+    e.preventDefault();
+    if (carrito.length === 0) {
+        alert("El carrito está vacío.");
+        return;
+    }
+
+    const datosPedido = {
+        nombre: document.getElementById('cliente-nombre').value,
+        telefono: document.getElementById('cliente-telefono').value,
+        entrega: document.getElementById('tipo-entrega').value,
+        direccion: document.getElementById('cliente-direccion').value || 'Retiro en local',
+        metodoPago: document.getElementById('metodo-pago').value,
+        items: carrito,
+        total: document.getElementById('total-precio').innerText
+    };
+
+    const res = await fetch('/api/pedidos/crear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datosPedido)
+    });
+
+    const respuesta = await res.json();
+
+    if (res.ok) {
+        ultimoPedidoId = respuesta.pedido_id;
+        carrito = [];
+        actualizarCarritoUI();
+        document.getElementById('form-pedido').reset();
+        if (typeof toggleDireccion === 'function') toggleDireccion();
+
+        mostrarCajaSeguimiento(ultimoPedidoId);
+    } else {
+        alert("Ocurrió un error al enviar el pedido.");
+    }
+}
+
+function mostrarCajaSeguimiento(id) {
+    let contenedorStatus = document.getElementById('status-pedido-container');
+    if (!contenedorStatus) {
+        contenedorStatus = document.createElement('div');
+        contenedorStatus.id = 'status-pedido-container';
+        contenedorStatus.style.marginTop = '20px';
+        contenedorStatus.style.padding = '15px';
+        contenedorStatus.style.borderRadius = '8px';
+        
+        const form = document.getElementById('form-pedido');
+        if (form) {
+            form.parentNode.appendChild(contenedorStatus);
+        } else {
+            document.body.appendChild(contenedorStatus);
+        }
+    }
+
+    consultarEstado(id);
+    setInterval(() => consultarEstado(id), 5000);
+}
+
+async function consultarEstado(id) {
+    const res = await fetch(`/api/pedidos/estado/${id}`);
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const contenedor = document.getElementById('status-pedido-container');
+
+    if (data.estado === 'Pendiente') {
+        contenedor.style.backgroundColor = '#fef9e7';
+        contenedor.style.border = '1px solid #f39c12';
+        contenedor.innerHTML = `<h3>⏳ Estado del Pedido #${id}: Pendiente</h3><p>Tu pedido será confirmado a la brevedad por la distribuidora.</p>`;
+    } else if (data.estado === 'Confirmado') {
+        contenedor.style.backgroundColor = '#e8f8f5';
+        contenedor.style.border = '1px solid #27ae60';
+        contenedor.innerHTML = `<h3>✅ Estado del Pedido #${id}: ¡En Proceso!</h3><p>Tu pedido fue aceptado por el administrador y ya lo estamos preparando.</p>`;
+    } else if (data.estado === 'Rechazado') {
+        contenedor.style.backgroundColor = '#fadbd8';
+        contenedor.style.border = '1px solid #e74c3c';
+        contenedor.innerHTML = `<h3>❌ Tu pedido fue rechazado</h3><p><strong>Motivo de cancelación:</strong> ${data.motivo_rechazo}</p>`;
+    } else if (data.estado === 'Finalizado') {
+        contenedor.style.backgroundColor = '#ebf5fb';
+        contenedor.style.border = '1px solid #2980b9';
+        contenedor.innerHTML = `<h3>🚀 Pedido #${id} Completado</h3><p>¡El pedido ha sido entregado / listo para retirar!</p>`;
+    }
+}
+
+        cargarCatalogo();
+    </script>
+</body>
+</html>

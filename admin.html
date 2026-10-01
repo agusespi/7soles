@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Administración - Creador</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="admin-bg">
+
+    <header class="admin-header">
+        <h1>⚙️ Panel del Creador (Administración)</h1>
+        <a href="/" style="color: white; font-weight: bold;">Ver tienda pública</a>
+    </header>
+
+    <div class="container main-admin">
+        
+        <!-- ESTADO DEL DELIVERY -->
+        <section class="card admin-card">
+            <h2>🚚 Estado del Delivery</h2>
+            <label class="switch-container">
+                <input type="checkbox" id="delivery-toggle" onchange="cambiarEstadoDelivery(this.checked)" 
+                {% if configuracion and configuracion.delivery_disponible %} checked {% endif %}>
+                <span>Habilitar Delivery para los clientes</span>
+            </label>
+        </section>
+
+        <!-- SECCIÓN DE PEDIDOS POR ESTADO -->
+        <section class="card admin-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2>📥 Gestión de Pedidos</h2>
+                <button class="btn-guardar" onclick="cargarPedidos()" style="width: auto; padding: 5px 15px;">🔄 Actualizar Pedidos</button>
+            </div>
+
+            <!-- Filtro de Estados -->
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px;">
+                <button onclick="filtrarPedidos('Pendiente')" style="padding: 8px 15px; border-radius: 5px; cursor: pointer; border: none; font-weight: bold; background-color: #e67e22; color: white;">⏳ Pendientes (<span id="cant-pendiente">0</span>)</button>
+                <button onclick="filtrarPedidos('Confirmado')" style="padding: 8px 15px; border-radius: 5px; cursor: pointer; border: none; font-weight: bold; background-color: #27ae60; color: white;">✅ Confirmados / En proceso (<span id="cant-confirmado">0</span>)</button>
+                <button onclick="filtrarPedidos('Finalizado')" style="padding: 8px 15px; border-radius: 5px; cursor: pointer; border: none; font-weight: bold; background-color: #2980b9; color: white;">🏁 Finalizados (<span id="cant-finalizado">0</span>)</button>
+                <button onclick="filtrarPedidos('Rechazado')" style="padding: 8px 15px; border-radius: 5px; cursor: pointer; border: none; font-weight: bold; background-color: #c0392b; color: white;">❌ Rechazados (<span id="cant-rechazado">0</span>)</button>
+            </div>
+
+            <div id="lista-pedidos">
+                <!-- Se cargan dinámicamente -->
+            </div>
+        </section>
+
+        <!-- AGREGAR NUEVA BEBIDA -->
+        <section class="card admin-card">
+            <h2>➕ Agregar Nueva Bebida al Catálogo</h2>
+            <form id="form-nueva-bebida" onsubmit="agregarNuevaBebida(event)" enctype="multipart/form-data" class="form-grid">
+                <div>
+                    <label>Nombre de la bebida:</label>
+                    <input type="text" id="nuevo-nombre" required placeholder="Ej: Cerveza Quilmes 1L">
+                </div>
+                <div>
+                    <label>Precio ($):</label>
+                    <input type="number" step="0.01" id="nuevo-precio" required placeholder="Ej: 2500">
+                </div>
+                <div>
+                    <label>Stock inicial:</label>
+                    <input type="number" id="nuevo-stock" required placeholder="Ej: 24">
+                </div>
+                <div>
+                    <label>Imagen del producto:</label>
+                    <input type="file" id="nuevo-imagen" accept="image/*">
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <button type="submit" class="btn-guardar" style="margin-top: 10px;">Guardar Nueva Bebida</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- GESTIÓN DE STOCK Y PRECIOS EXISTENTES -->
+        <section class="card admin-card">
+            <h2>📦 Gestión de Stock y Precios</h2>
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Imagen</th>
+                        <th>Producto</th>
+                        <th>Precio ($)</th>
+                        <th>Stock Actual</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="admin-productos-body">
+                    <!-- Se carga dinámicamente -->
+                </tbody>
+            </table>
+        </section>
+
+    </div>
+
+    <script>
+        let todosLosPedidos = [];
+        let estadoFiltroActual = 'Pendiente';
+
+        async function cargarPedidos() {
+            try {
+                const res = await fetch('/api/admin/pedidos');
+                todosLosPedidos = await res.json();
+                
+                // Actualizar contadores
+                document.getElementById('cant-pendiente').innerText = todosLosPedidos.filter(p => p.estado === 'Pendiente').length;
+                document.getElementById('cant-confirmado').innerText = todosLosPedidos.filter(p => p.estado === 'Confirmado').length;
+                document.getElementById('cant-finalizado').innerText = todosLosPedidos.filter(p => p.estado === 'Finalizado').length;
+                document.getElementById('cant-rechazado').innerText = todosLosPedidos.filter(p => p.estado === 'Rechazado').length;
+
+                renderPedidos();
+            } catch (err) {
+                console.error("Error al cargar pedidos:", err);
+            }
+        }
+
+        function filtrarPedidos(estado) {
+            estadoFiltroActual = estado;
+            renderPedidos();
+        }
+
+        function renderPedidos() {
+            const contenedor = document.getElementById('lista-pedidos');
+            contenedor.innerHTML = '';
+
+            const filtrados = todosLosPedidos.filter(p => p.estado === estadoFiltroActual);
+
+            if (filtrados.length === 0) {
+                contenedor.innerHTML = `<p style="color: #777; padding: 10px;">No hay pedidos en la lista "${estadoFiltroActual}".</p>`;
+                return;
+            }
+
+            filtrados.slice().reverse().forEach(p => {
+                const div = document.createElement('div');
+                div.style.border = '1px solid #ddd';
+                div.style.padding = '15px';
+                div.style.marginBottom = '12px';
+                div.style.borderRadius = '8px';
+                div.style.backgroundColor = p.estado === 'Confirmado' ? '#e8f8f5' : (p.estado === 'Rechazado' ? '#fadbd8' : (p.estado === 'Finalizado' ? '#f2f4f4' : '#fff8e7'));
+
+                const listaItems = (p.items || []).map(i => `${i.nombre} (x${i.cantidad})`).join(', ');
+
+                let acciones = '';
+                if (p.estado === 'Pendiente') {
+                    acciones = `
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button class="btn-guardar" onclick="aceptarPedido(${p.id})" style="background-color: #27ae60;">
+                                ✅ Aceptar Pedido y Notificar
+                            </button>
+                            <button class="btn-guardar" onclick="rechazarPedido(${p.id})" style="background-color: #c0392b;">
+                                ❌ Rechazar Pedido
+                            </button>
+                        </div>
+                    `;
+                } else if (p.estado === 'Confirmado') {
+                    acciones = `
+                        <button class="btn-guardar" onclick="finalizarPedido(${p.id})" style="margin-top: 10px; background-color: #2980b9;">
+                            🏁 Marcar como Terminado / Entregado
+                        </button>
+                    `;
+                } else if (p.estado === 'Rechazado') {
+                    acciones = `<p style="color: #c0392b; font-weight: bold; margin-top: 8px;">❌ Cancelado: ${p.motivo_rechazo || 'Sin motivo'}</p>`;
+                } else {
+                    acciones = `<p style="color: #27ae60; font-weight: bold; margin-top: 8px;">✔ Pedido Finalizado</p>`;
+                }
+
+                div.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 8px;">
+                        <strong>Pedido #${p.id}</strong>
+                        <span style="padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; background: ${p.estado === 'Confirmado' ? '#27ae60' : (p.estado === 'Rechazado' ? '#c0392b' : (p.estado === 'Finalizado' ? '#2980b9' : '#e67e22'))}; color: white;">
+                            ${p.estado}
+                        </span>
+                    </div>
+                    <p>👤 <strong>Cliente:</strong> ${p.cliente} | 📞 <strong>Tel:</strong> ${p.telefono}</p>
+                    <p>🚚 <strong>Entrega:</strong> ${(p.entrega || '').toUpperCase()} ${p.direccion ? `(${p.direccion})` : ''}</p>
+                    <p>💳 <strong>Método de Pago:</strong> ${p.metodoPago}</p>
+                    <p>🛒 <strong>Detalle:</strong> ${listaItems}</p>
+                    <p style="font-size: 16px; margin-top: 5px;"><strong>Total: $${p.total}</strong></p>
+                    ${acciones}
+                `;
+                contenedor.appendChild(div);
+            });
+        }
+
+        async function aceptarPedido(id) {
+            const res = await fetch('/api/admin/aceptar_pedido', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                alert("Pedido Aceptado correctamente.");
+                if (data.telefono) {
+                    window.open(`https://wa.me/${data.telefono}?text=${encodeURIComponent(data.texto_whatsapp)}`, '_blank');
+                }
+                cargarPedidos();
+            } else {
+                alert("Error al confirmar el pedido.");
+            }
+        }
+
+        async function rechazarPedido(id) {
+            const motivo = prompt("Escribe la razón del rechazo / cancelación:");
+            if (motivo === null) return;
+
+            const res = await fetch('/api/admin/rechazar_pedido', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, motivo })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                alert("Pedido Rechazado.");
+                if (data.telefono) {
+                    window.open(`https://wa.me/${data.telefono}?text=${encodeURIComponent(data.texto_whatsapp)}`, '_blank');
+                }
+                cargarPedidos();
+            } else {
+                alert("Error al rechazar el pedido.");
+            }
+        }
+
+        async function finalizarPedido(id) {
+            const res = await fetch('/api/admin/finalizar_pedido', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                alert("Pedido Finalizado.");
+                if (data.telefono) {
+                    window.open(`https://wa.me/${data.telefono}?text=${encodeURIComponent(data.texto_whatsapp)}`, '_blank');
+                }
+                cargarPedidos();
+            } else {
+                alert("Error al finalizar el pedido.");
+            }
+        }
+
+        async function cargarAdmin() {
+            try {
+                const res = await fetch('/api/admin/bebidas');
+                const productos = await res.json();
+                const tbody = document.getElementById('admin-productos-body');
+                tbody.innerHTML = '';
+
+                productos.forEach(p => {
+                    const tr = document.createElement('tr');
+                    const imgSrc = p.imagen ? `/static/uploads/${p.imagen}` : 'https://via.placeholder.com/50?text=S/I';
+                    
+                    tr.innerHTML = `
+                        <td><img src="${imgSrc}" width="50" height="50" style="object-fit: contain; border-radius: 4px;"></td>
+                        <td><strong>${p.nombre}</strong></td>
+                        <td><input type="number" id="precio-${p.id}" value="${p.precio}" step="0.01"></td>
+                        <td><input type="number" id="stock-${p.id}" value="${p.stock}"></td>
+                        <td><button class="btn-guardar" onclick="guardarCambios(${p.id})">Guardar</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error("Error al cargar productos:", err);
+            }
+        }
+
+        async function agregarNuevaBebida(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('nombre', document.getElementById('nuevo-nombre').value);
+            formData.append('precio', document.getElementById('nuevo-precio').value);
+            formData.append('stock', document.getElementById('nuevo-stock').value);
+            
+            const fileInput = document.getElementById('nuevo-imagen');
+            if (fileInput.files[0]) {
+                formData.append('imagen', fileInput.files[0]);
+            }
+
+            const res = await fetch('/api/admin/agregar_producto', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (res.ok) {
+                alert("Bebida agregada con éxito");
+                document.getElementById('form-nueva-bebida').reset();
+                cargarAdmin();
+            } else {
+                alert("Error al agregar la bebida");
+            }
+        }
+
+        async function guardarCambios(id) {
+            const precio = document.getElementById(`precio-${id}`).value;
+            const stock = document.getElementById(`stock-${id}`).value;
+
+            const res = await fetch('/api/admin/actualizar_producto', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, precio, stock })
+            });
+
+            if (res.ok) {
+                alert("Producto actualizado correctamente");
+                cargarAdmin();
+            } else {
+                alert("Error al actualizar");
+            }
+        }
+
+        async function cambiarEstadoDelivery(estado) {
+            await fetch('/api/admin/toggle_delivery', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ disponible: estado })
+            });
+        }
+
+        // Carga inicial
+        cargarAdmin();
+        cargarPedidos();
+
+        // Recarga automática cada 5 segundos para recibir pedidos en tiempo real
+        setInterval(cargarPedidos, 5000);
+    </script>
+</body>
+</html>
